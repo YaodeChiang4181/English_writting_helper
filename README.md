@@ -44,5 +44,5 @@ pip install -r requirements.txt
 
 4. 執行 Bot：
 ```bash
-python src/main.py
+python -m src.main
 ```
