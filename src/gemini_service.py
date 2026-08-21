@@ -54,7 +54,7 @@ async def review_peel_writing(point: str, explanation: str, example: str, link: 
             link=link
         )
         response = await client.aio.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-3.6-flash',
             contents=prompt
         )
         return response.text
