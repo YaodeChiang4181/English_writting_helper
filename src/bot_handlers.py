@@ -68,7 +68,11 @@ async def receive_link(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     
     report = await review_peel_writing(point, explanation, example, link)
     
-    await update.message.reply_text(report, parse_mode='Markdown')
+    try:
+        await update.message.reply_text(report, parse_mode='Markdown')
+    except Exception:
+        # Fallback to plain text if markdown parsing fails
+        await update.message.reply_text(report)
     
     # Clear user data
     context.user_data.clear()
