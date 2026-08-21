@@ -1,8 +1,7 @@
-import google.generativeai as genai
+from google import genai
 from .config import GEMINI_API_KEY
 
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash')
+client = genai.Client(api_key=GEMINI_API_KEY)
 
 PROMPT_TEMPLATE = """You are a distinguished professor and academic evaluator at a top-tier research university in Taiwan, specializing in graduate admissions. Your mission is to evaluate, grade, and refine students' academic essays written for graduate entrance examinations.
 
@@ -54,7 +53,10 @@ async def review_peel_writing(point: str, explanation: str, example: str, link: 
             example=example,
             link=link
         )
-        response = await model.generate_content_async(prompt)
+        response = await client.aio.models.generate_content(
+            model='gemini-1.5-flash',
+            contents=prompt
+        )
         return response.text
     except Exception as e:
         return f"⚠️ 審核過程中發生錯誤，請稍後再試。\n詳細錯誤：{str(e)}"
