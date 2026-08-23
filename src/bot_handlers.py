@@ -72,11 +72,9 @@ def split_message(text, chunk_size=4000):
         chunks.append(text)
     return chunks
 
-async def receive_link(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data['link'] = update.message.text
-    
+async def process_submission(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_chat_action(ChatAction.TYPING)
-    await update.message.reply_text("⏳ 感謝你的輸入！AI 教練正在仔細審核你的文章，請稍候...")
+    await update.message.reply_text("⏳ 正在將你的文章送交 AI 教練審核，請稍候...")
     
     point = context.user_data.get('point', '')
     explanation = context.user_data.get('explanation', '')
@@ -85,6 +83,12 @@ async def receive_link(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     
     report = await review_peel_writing(point, explanation, example, link)
     
+    if report.startswith("⚠️"):
+        # Send error message but do NOT clear user data
+        error_msg = f"{report}\n\n💡 **你的草稿都還在！**\n伺服器目前可能較繁忙。請過幾分鐘後輸入 /retry 重新送出，或者輸入 /cancel 取消本次寫作。"
+        await update.message.reply_text(error_msg, parse_mode='Markdown')
+        return LINK # Stay in LINK state
+
     # Split report to avoid Telegram's 4096 characters limit
     chunks = split_message(report)
     
@@ -100,6 +104,16 @@ async def receive_link(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     
     return ConversationHandler.END
 
+async def receive_link(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data['link'] = update.message.text
+    return await process_submission(update, context)
+
+async def retry_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if 'link' not in context.user_data:
+        await update.message.reply_text("目前沒有保留的草稿喔！請輸入 /write 開始全新寫作。")
+        return ConversationHandler.END
+    return await process_submission(update, context)
+
 async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text("🚫 已取消本次寫作練習。準備好隨時輸入 /write 再次開始！")
     context.user_data.clear()
@@ -112,7 +126,10 @@ peel_conv_handler = ConversationHandler(
         POINT: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_point)],
         EXPLANATION: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_explanation)],
         EXAMPLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_example)],
-        LINK: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_link)],
+        LINK: [
+            MessageHandler(filters.TEXT & ~filters.COMMAND, receive_link),
+            CommandHandler('retry', retry_command)
+        ],
     },
     fallbacks=[
         CommandHandler('cancel', cancel_command),

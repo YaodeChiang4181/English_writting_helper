@@ -64,6 +64,6 @@ async def review_peel_writing(point: str, explanation: str, example: str, link: 
         )
         return response.text
     except asyncio.TimeoutError:
-        return "⚠️ AI 教練思考時間過長 (超過 60 秒)，可能遇到了網路連線或伺服器問題，請重新輸入 /write 再次挑戰！"
+        return "⚠️ AI 教練思考時間過長 (超過 60 秒)，可能遇到了網路連線或伺服器問題。"
     except Exception as e:
-        return f"⚠️ 審核過程中發生錯誤，請稍後再試。\n詳細錯誤：{str(e)}"
+        return f"⚠️ 審核過程中發生錯誤。\n詳細錯誤：{str(e)}"
