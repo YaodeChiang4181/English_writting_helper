@@ -55,6 +55,23 @@ async def receive_example(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     )
     return LINK
 
+def split_message(text, chunk_size=4000):
+    chunks = []
+    while len(text) > chunk_size:
+        # Find the last double newline within the chunk_size
+        split_at = text.rfind('\n\n', 0, chunk_size)
+        if split_at == -1:
+            split_at = text.rfind('\n', 0, chunk_size)
+        if split_at == -1:
+            split_at = chunk_size
+        
+        chunks.append(text[:split_at])
+        text = text[split_at:].lstrip()
+    
+    if text:
+        chunks.append(text)
+    return chunks
+
 async def receive_link(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data['link'] = update.message.text
     
@@ -68,11 +85,15 @@ async def receive_link(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     
     report = await review_peel_writing(point, explanation, example, link)
     
-    try:
-        await update.message.reply_text(report, parse_mode='Markdown')
-    except Exception:
-        # Fallback to plain text if markdown parsing fails
-        await update.message.reply_text(report)
+    # Split report to avoid Telegram's 4096 characters limit
+    chunks = split_message(report)
+    
+    for chunk in chunks:
+        try:
+            await update.message.reply_text(chunk, parse_mode='Markdown')
+        except Exception:
+            # Fallback to plain text if markdown parsing fails
+            await update.message.reply_text(chunk)
     
     # Clear user data
     context.user_data.clear()
@@ -93,5 +114,9 @@ peel_conv_handler = ConversationHandler(
         EXAMPLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_example)],
         LINK: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_link)],
     },
-    fallbacks=[CommandHandler('cancel', cancel_command)],
+    fallbacks=[
+        CommandHandler('cancel', cancel_command),
+        MessageHandler(filters.COMMAND, cancel_command)
+    ],
+    allow_reentry=True
 )

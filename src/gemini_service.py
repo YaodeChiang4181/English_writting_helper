@@ -46,6 +46,7 @@ When reviewing a student's submission:
 """
 
 async def review_peel_writing(point: str, explanation: str, example: str, link: str) -> str:
+    import asyncio
     try:
         prompt = PROMPT_TEMPLATE.format(
             point=point,
@@ -53,10 +54,16 @@ async def review_peel_writing(point: str, explanation: str, example: str, link: 
             example=example,
             link=link
         )
-        response = await client.aio.models.generate_content(
-            model='gemini-3.6-flash',
-            contents=prompt
+        # Use asyncio.wait_for to prevent indefinite hanging (timeout set to 60 seconds)
+        response = await asyncio.wait_for(
+            client.aio.models.generate_content(
+                model='gemini-3.6-flash',
+                contents=prompt
+            ),
+            timeout=60.0
         )
         return response.text
+    except asyncio.TimeoutError:
+        return "⚠️ AI 教練思考時間過長 (超過 60 秒)，可能遇到了網路連線或伺服器問題，請重新輸入 /write 再次挑戰！"
     except Exception as e:
         return f"⚠️ 審核過程中發生錯誤，請稍後再試。\n詳細錯誤：{str(e)}"
