@@ -2,6 +2,7 @@ import logging
 from telegram.ext import ApplicationBuilder, CommandHandler
 from src.config import TELEGRAM_BOT_TOKEN
 from src.bot_handlers import start_command, peel_conv_handler
+from src.dummy_server import keep_alive
 
 # Set up basic logging
 logging.basicConfig(
@@ -19,6 +20,9 @@ def main():
     # Register handlers
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(peel_conv_handler)
+    
+    # Start dummy web server to keep Render happy
+    keep_alive()
     
     # Start polling
     logger.info("Bot is now polling...")
