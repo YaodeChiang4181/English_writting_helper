@@ -65,26 +65,36 @@ async def review_peel_writing_batch(submissions: list[dict]) -> list[str]:
         submissions_text=submissions_text
     )
     
-    try:
-        response = await asyncio.wait_for(
-            client.aio.models.generate_content(
-                model='gemini-3.6-flash',
-                contents=prompt
-            ),
-            timeout=120.0
-        )
-        
-        reports = response.text.split("===REVIEW_SEPARATOR===")
-        reports = [r.strip() for r in reports if r.strip()]
-        
-        while len(reports) < len(submissions):
-            reports.append("⚠️ AI 審核過程中遺漏了這筆回應，請稍後再試。")
+    max_retries = 3
+    base_delay = 5  # seconds
+    
+    for attempt in range(max_retries):
+        try:
+            response = await asyncio.wait_for(
+                client.aio.models.generate_content(
+                    model='gemini-3.6-flash',
+                    contents=prompt
+                ),
+                timeout=120.0
+            )
             
-        return reports[:len(submissions)]
-    except asyncio.TimeoutError:
-        return ["⚠️ AI 教練思考時間過長 (超過 120 秒)，可能遇到了網路連線或伺服器問題。"] * len(submissions)
-    except Exception as e:
-        return [f"⚠️ 審核過程中發生錯誤。\n詳細錯誤：{str(e)}"] * len(submissions)
+            reports = response.text.split("===REVIEW_SEPARATOR===")
+            reports = [r.strip() for r in reports if r.strip()]
+            
+            while len(reports) < len(submissions):
+                reports.append("⚠️ AI 審核過程中遺漏了這筆回應，請稍後再試。")
+                
+            return reports[:len(submissions)]
+            
+        except asyncio.TimeoutError:
+            if attempt == max_retries - 1:
+                return ["⚠️ AI 教練思考時間過長 (超過 120 秒)，請稍後再試。"] * len(submissions)
+        except Exception as e:
+            if attempt == max_retries - 1:
+                return [f"⚠️ 審核過程中發生錯誤，請稍後再試。\n詳細錯誤：{str(e)}"] * len(submissions)
+        
+        # Exponential backoff before retrying
+        await asyncio.sleep(base_delay * (2 ** attempt))
 
 async def review_peel_writing(point: str, explanation: str, example: str, link: str) -> str:
     res = await review_peel_writing_batch([
