@@ -1,7 +1,7 @@
 import logging
 from telegram.ext import ApplicationBuilder, CommandHandler
 from src.config import TELEGRAM_BOT_TOKEN
-from src.bot_handlers import start_command, peel_conv_handler
+from src.bot_handlers import start_command, peel_conv_handler, batch_process_job
 from src.dummy_server import keep_alive
 
 # Set up basic logging
@@ -20,6 +20,12 @@ def main():
     # Register handlers
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(peel_conv_handler)
+    
+    # Schedule batch processing job every 60 seconds
+    if application.job_queue:
+        application.job_queue.run_repeating(batch_process_job, interval=60, first=10)
+    else:
+        logger.warning("JobQueue is not available! Batch processing will not work.")
     
     # Start dummy web server to keep Render happy
     keep_alive()

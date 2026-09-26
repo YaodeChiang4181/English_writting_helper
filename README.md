@@ -1,6 +1,15 @@
 # PEEL Writing Coach Bot
 
-透過 Telegram Bot 狀態機引導使用者依序輸入 PEEL 四段內容（Point, Explanation, Example, Link），組裝後呼叫 Google Gemini API 進行架構、文法與用詞的深度審核，最後回傳結構化評估報告。
+透過 Telegram Bot 狀態機引導使用者依序輸入 PEEL 四段內容（Point, Explanation, Example, Link），組裝後透過背景排程機制批次呼叫 Google Gemini API 進行架構、文法與用詞的深度審核，最後回傳結構化評估報告給使用者。
+
+## 系統架構與特色 (Architecture & Features)
+
+- **非同步狀態機 (Async State Machine)**: 使用 `python-telegram-bot` 實作 ConversationHandler，捕捉使用者分段的輸入，保持高互動性與清晰的指引。
+- **批次處理機制 (Batch Processing)**: 為了解決大流量下導致 Gemini API 觸發 Rate Limit (免費額度限制) 的問題，系統採用了背景佇列 (Job Queue) 的架構：
+  - 使用者提交完文章後，請求會先進入伺服器記憶體佇列 (`pending_submissions`)。
+  - 背景排程任務每 60 秒會自動喚醒一次，將佇列中的多筆審核請求合併為單一的 Prompt (附帶特定分隔符號)。
+  - 對 Gemini 進行一次 API 請求即可獲得多人的批次評估，隨後再由系統派發至對應的 Telegram 聊天室。
+- **高可用與防呆**: 若 API 回應超時或格式錯誤，系統設計了相容的回退與錯誤提醒機制，以確保使用者能獲得明確反饋。
 
 ## 環境變數
 

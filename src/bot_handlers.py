@@ -7,7 +7,39 @@ from telegram.ext import (
     ConversationHandler
 )
 from telegram.constants import ChatAction
-from .gemini_service import review_peel_writing
+from .gemini_service import review_peel_writing, review_peel_writing_batch
+
+pending_submissions = []
+
+async def batch_process_job(context: ContextTypes.DEFAULT_TYPE):
+    if not pending_submissions:
+        return
+    
+    # Process up to 5 submissions at a time
+    batch_size = 5
+    batch = pending_submissions[:batch_size]
+    del pending_submissions[:batch_size]
+    
+    reports = await review_peel_writing_batch(batch)
+    
+    for i, report in enumerate(reports):
+        chat_id = batch[i]['chat_id']
+        
+        if report.startswith("⚠️"):
+            error_msg = f"{report}\n\n💡 伺服器處理失敗，請重新輸入 /write 再試一次。"
+            try:
+                await context.bot.send_message(chat_id=chat_id, text=error_msg, parse_mode='Markdown')
+            except Exception:
+                pass
+            continue
+            
+        chunks = split_message(report)
+        for chunk in chunks:
+            try:
+                await context.bot.send_message(chat_id=chat_id, text=chunk, parse_mode='Markdown')
+            except Exception:
+                await context.bot.send_message(chat_id=chat_id, text=chunk)
+
 
 # Define states
 POINT, EXPLANATION, EXAMPLE, LINK = range(4)
@@ -73,33 +105,22 @@ def split_message(text, chunk_size=4000):
     return chunks
 
 async def process_submission(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await update.message.reply_chat_action(ChatAction.TYPING)
-    await update.message.reply_text("⏳ 正在將你的文章送交 AI 教練審核，請稍候...")
-    
     point = context.user_data.get('point', '')
     explanation = context.user_data.get('explanation', '')
     example = context.user_data.get('example', '')
     link = context.user_data.get('link', '')
     
-    report = await review_peel_writing(point, explanation, example, link)
+    pending_submissions.append({
+        'chat_id': update.effective_chat.id,
+        'point': point,
+        'explanation': explanation,
+        'example': example,
+        'link': link,
+    })
     
-    if report.startswith("⚠️"):
-        # Send error message but do NOT clear user data
-        error_msg = f"{report}\n\n💡 **你的草稿都還在！**\n伺服器目前可能較繁忙。請過幾分鐘後輸入 /retry 重新送出，或者輸入 /cancel 取消本次寫作。"
-        await update.message.reply_text(error_msg, parse_mode='Markdown')
-        return LINK # Stay in LINK state
-
-    # Split report to avoid Telegram's 4096 characters limit
-    chunks = split_message(report)
+    await update.message.reply_text("⏳ 你的文章已加入批次審核佇列。為了降低 API 用量，系統將定時批次處理多筆文章，請耐心等候幾分鐘...")
     
-    for chunk in chunks:
-        try:
-            await update.message.reply_text(chunk, parse_mode='Markdown')
-        except Exception:
-            # Fallback to plain text if markdown parsing fails
-            await update.message.reply_text(chunk)
-    
-    # Clear user data
+    # Clear user data since it is queued
     context.user_data.clear()
     
     return ConversationHandler.END

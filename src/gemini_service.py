@@ -1,9 +1,10 @@
 from google import genai
 from .config import GEMINI_API_KEY
+import asyncio
 
 client = genai.Client(api_key=GEMINI_API_KEY)
 
-PROMPT_TEMPLATE = """You are a distinguished professor and academic evaluator at a top-tier research university in Taiwan, specializing in graduate admissions. Your mission is to evaluate, grade, and refine students' academic essays written for graduate entrance examinations.
+BATCH_PROMPT_TEMPLATE = """You are a distinguished professor and academic evaluator at a top-tier research university in Taiwan, specializing in graduate admissions. Your mission is to evaluate, grade, and refine students' academic essays written for graduate entrance examinations.
 
 When guiding, generating, or evaluating essays based on provided academic reading materials, strictly adhere to the following evaluation criteria and structural constraints:
 
@@ -38,32 +39,55 @@ When reviewing a student's submission:
 3. **Lexical & Syntactic Upgrades:** Highlight informal phrasing and offer 3–5 high-impact academic sentence upgrades using advanced syntactic structures (e.g., participial phrases, inversion, nominalization).
 4. **Exemplary Revision:** Provide a revised model paragraph illustrating how to elevate the student's raw draft into publication/admission-ready academic prose.
 
-[User Submission]
-- Point (主張): {point}
-- Explanation (解釋): {explanation}
-- Example (舉例): {example}
-- Link (結論與連結): {link}
+IMPORTANT: You will receive a batch of {batch_size} submissions. You MUST evaluate EACH submission individually.
+Separate each evaluation strictly with the exact string "===REVIEW_SEPARATOR===".
+Do not add any text before the first evaluation or after the last evaluation. The output should be just the evaluations separated by "===REVIEW_SEPARATOR===".
+
+Here are the submissions:
+
+{submissions_text}
 """
 
-async def review_peel_writing(point: str, explanation: str, example: str, link: str) -> str:
-    import asyncio
+async def review_peel_writing_batch(submissions: list[dict]) -> list[str]:
+    if not submissions:
+        return []
+        
+    submissions_text = ""
+    for i, sub in enumerate(submissions, 1):
+        submissions_text += f"[Submission {i}]\n"
+        submissions_text += f"- Point (主張): {sub.get('point', '')}\n"
+        submissions_text += f"- Explanation (解釋): {sub.get('explanation', '')}\n"
+        submissions_text += f"- Example (舉例): {sub.get('example', '')}\n"
+        submissions_text += f"- Link (結論與連結): {sub.get('link', '')}\n\n"
+        
+    prompt = BATCH_PROMPT_TEMPLATE.format(
+        batch_size=len(submissions),
+        submissions_text=submissions_text
+    )
+    
     try:
-        prompt = PROMPT_TEMPLATE.format(
-            point=point,
-            explanation=explanation,
-            example=example,
-            link=link
-        )
-        # Use asyncio.wait_for to prevent indefinite hanging (timeout set to 60 seconds)
         response = await asyncio.wait_for(
             client.aio.models.generate_content(
                 model='gemini-3.6-flash',
                 contents=prompt
             ),
-            timeout=60.0
+            timeout=120.0
         )
-        return response.text
+        
+        reports = response.text.split("===REVIEW_SEPARATOR===")
+        reports = [r.strip() for r in reports if r.strip()]
+        
+        while len(reports) < len(submissions):
+            reports.append("⚠️ AI 審核過程中遺漏了這筆回應，請稍後再試。")
+            
+        return reports[:len(submissions)]
     except asyncio.TimeoutError:
-        return "⚠️ AI 教練思考時間過長 (超過 60 秒)，可能遇到了網路連線或伺服器問題。"
+        return ["⚠️ AI 教練思考時間過長 (超過 120 秒)，可能遇到了網路連線或伺服器問題。"] * len(submissions)
     except Exception as e:
-        return f"⚠️ 審核過程中發生錯誤。\n詳細錯誤：{str(e)}"
+        return [f"⚠️ 審核過程中發生錯誤。\n詳細錯誤：{str(e)}"] * len(submissions)
+
+async def review_peel_writing(point: str, explanation: str, example: str, link: str) -> str:
+    res = await review_peel_writing_batch([
+        {'point': point, 'explanation': explanation, 'example': example, 'link': link}
+    ])
+    return res[0]
