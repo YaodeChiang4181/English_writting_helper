@@ -65,35 +65,52 @@ async def review_peel_writing_batch(submissions: list[dict]) -> list[str]:
         submissions_text=submissions_text
     )
     
-    max_retries = 3
+    max_retries = 5
     base_delay = 5  # seconds
     
+    models_to_try = [
+        "gemini-3.7-flash",
+        "gemini-3.8-flash",
+        "gemini-3.5-flash",
+        "gemini-2.5-flash",
+        "gemini-flash-latest",
+        "gemini-3.6-flash"
+    ]
+    
     for attempt in range(max_retries):
-        try:
-            response = await asyncio.wait_for(
-                client.aio.models.generate_content(
-                    model='gemini-3.6-flash',
-                    contents=prompt
-                ),
-                timeout=120.0
-            )
-            
-            reports = response.text.split("===REVIEW_SEPARATOR===")
-            reports = [r.strip() for r in reports if r.strip()]
-            
-            while len(reports) < len(submissions):
-                reports.append("⚠️ AI 審核過程中遺漏了這筆回應，請稍後再試。")
+        last_exception = None
+        for model_name in models_to_try:
+            try:
+                response = await asyncio.wait_for(
+                    client.aio.models.generate_content(
+                        model=model_name,
+                        contents=prompt
+                    ),
+                    timeout=120.0
+                )
                 
-            return reports[:len(submissions)]
-            
-        except asyncio.TimeoutError:
-            if attempt == max_retries - 1:
-                return ["⚠️ AI 教練思考時間過長 (超過 120 秒)，請稍後再試。"] * len(submissions)
-        except Exception as e:
-            if attempt == max_retries - 1:
-                return [f"⚠️ 審核過程中發生錯誤，請稍後再試。\n詳細錯誤：{str(e)}"] * len(submissions)
+                reports = response.text.split("===REVIEW_SEPARATOR===")
+                reports = [r.strip() for r in reports if r.strip()]
+                
+                while len(reports) < len(submissions):
+                    reports.append("⚠️ AI 審核過程中遺漏了這筆回應，請稍後再試。")
+                    
+                return reports[:len(submissions)]
+                
+            except asyncio.TimeoutError as e:
+                last_exception = e
+                continue
+            except Exception as e:
+                last_exception = e
+                continue
         
-        # Exponential backoff before retrying
+        if attempt == max_retries - 1:
+            if isinstance(last_exception, asyncio.TimeoutError):
+                return ["⚠️ AI 教練思考時間過長 (超過 120 秒)，請稍後再試。"] * len(submissions)
+            else:
+                return [f"⚠️ 審核過程中發生錯誤，請稍後再試。\n詳細錯誤：{str(last_exception)}"] * len(submissions)
+        
+        # Exponential backoff before retrying all models again
         await asyncio.sleep(base_delay * (2 ** attempt))
 
 async def review_peel_writing(point: str, explanation: str, example: str, link: str) -> str:
